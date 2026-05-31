@@ -9,8 +9,13 @@ name = "atomas"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "milestone1"
+path = "src/milestone1_test.rs"
+
 [dependencies]
 atomas-core = { path = "crates/atomas-core" }
 atomas-cv = { path = "crates/atomas-cv" }
 image = "0.25.6"
 rand = "0.9.1"
+anyhow = "1.0.98"
