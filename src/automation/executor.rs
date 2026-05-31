@@ -4,16 +4,21 @@
 //! Phase 1: Dry-run mode (prints commands)
 //! Phase 2: Real ADB tap execution
 
+use super::adb;
 use anyhow::Result;
 use atomas_cv::ActionCoordinates;
+use std::time::Duration;
 
 /// Execution mode
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum ExecutionMode {
     /// Dry-run: print commands without executing
     DryRun,
-    /// Real ADB execution (Phase 2)
-    Adb,
+    /// Real ADB execution
+    Adb {
+        device_serial: String,
+        delay_ms: u64,
+    },
 }
 
 /// Action executor
@@ -32,11 +37,12 @@ impl ActionExecutor {
     /// In dry-run mode, this prints the command that would be executed
     /// In ADB mode, this executes `adb shell input tap x y`
     pub fn execute_tap(&self, coordinates: ActionCoordinates, move_number: usize) -> Result<()> {
-        match self.mode {
+        match &self.mode {
             ExecutionMode::DryRun => self.dry_run_tap(coordinates, move_number),
-            ExecutionMode::Adb => {
-                anyhow::bail!("ADB execution not implemented yet (Phase 2)")
-            }
+            ExecutionMode::Adb {
+                device_serial,
+                delay_ms,
+            } => self.adb_tap(device_serial, coordinates, move_number, *delay_ms),
         }
     }
 
@@ -49,6 +55,34 @@ impl ActionExecutor {
             coordinates.y
         );
         log::info!("  Status: Skipped (dry-run mode)");
+
+        Ok(())
+    }
+
+    /// ADB mode: execute real tap on device
+    fn adb_tap(
+        &self,
+        device_serial: &str,
+        coordinates: ActionCoordinates,
+        move_number: usize,
+        delay_ms: u64,
+    ) -> Result<()> {
+        log::info!("[Move {}/N] Executing tap (ADB)...", move_number);
+        log::info!(
+            "  Command: adb shell input tap {} {}",
+            coordinates.x,
+            coordinates.y
+        );
+
+        adb::execute_tap(device_serial, coordinates.x, coordinates.y)?;
+
+        log::info!("  ✓ Tap executed");
+
+        // Wait delay before next action
+        if delay_ms > 0 {
+            log::debug!("  Waiting {} ms...", delay_ms);
+            std::thread::sleep(Duration::from_millis(delay_ms));
+        }
 
         Ok(())
     }

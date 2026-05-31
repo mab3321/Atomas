@@ -4,8 +4,9 @@
 //! Capture → Detect → Decide → Execute → Repeat
 //!
 //! Phase 1: Dry-run mode only (no ADB required)
-//! Phase 2: ADB integration (future)
+//! Phase 2: ADB integration
 
+pub mod adb;
 pub mod capture;
 pub mod decision;
 pub mod executor;

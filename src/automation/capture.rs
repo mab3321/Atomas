@@ -1,8 +1,9 @@
 //! Screenshot capture module
 //!
 //! Handles loading screenshots from disk (dry-run mode)
-//! Future: ADB screencap integration
+//! or capturing from ADB device (Phase 2)
 
+use super::adb;
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
@@ -11,14 +12,25 @@ use std::path::{Path, PathBuf};
 pub enum ScreenshotSource {
     /// Load from a file on disk (dry-run mode)
     File(PathBuf),
-    /// Future: Capture from ADB device
-    Adb,
+    /// Capture from ADB device
+    Adb {
+        device_serial: String,
+        output_path: PathBuf,
+    },
 }
 
 impl ScreenshotSource {
     /// Create a file-based source
     pub fn from_file<P: AsRef<Path>>(path: P) -> Self {
         Self::File(path.as_ref().to_path_buf())
+    }
+
+    /// Create an ADB-based source
+    pub fn from_adb<P: AsRef<Path>>(device_serial: String, output_path: P) -> Self {
+        Self::Adb {
+            device_serial,
+            output_path: output_path.as_ref().to_path_buf(),
+        }
     }
 
     /// Check if the screenshot source is available
@@ -30,18 +42,17 @@ impl ScreenshotSource {
                 }
                 Ok(())
             }
-            Self::Adb => {
-                anyhow::bail!("ADB mode not implemented yet (Phase 2)")
-            }
-        }
-    }
+            Self::Adb { device_serial, .. } => {
+                // Check ADB available and device connected
+                adb::check_adb_available().context("ADB not available")?;
 
-    /// Get the screenshot path (for dry-run mode)
-    pub fn get_path(&self) -> Result<PathBuf> {
-        match self {
-            Self::File(path) => Ok(path.clone()),
-            Self::Adb => {
-                anyhow::bail!("ADB mode not available in Phase 1")
+                // Verify device exists
+                let devices = adb::get_devices().context("Failed to get device list")?;
+                if !devices.iter().any(|d| d.serial == *device_serial) {
+                    anyhow::bail!("Device '{}' not connected", device_serial);
+                }
+
+                Ok(())
             }
         }
     }
@@ -49,7 +60,7 @@ impl ScreenshotSource {
     /// Capture a screenshot
     ///
     /// In dry-run mode, this just validates the file exists
-    /// In ADB mode (Phase 2), this will execute `adb exec-out screencap -p`
+    /// In ADB mode, this executes `adb exec-out screencap -p`
     pub fn capture(&self, move_number: usize) -> Result<PathBuf> {
         match self {
             Self::File(path) => {
@@ -62,8 +73,23 @@ impl ScreenshotSource {
 
                 Ok(path.clone())
             }
-            Self::Adb => {
-                anyhow::bail!("ADB capture not implemented (Phase 2)")
+            Self::Adb {
+                device_serial,
+                output_path,
+            } => {
+                log::info!(
+                    "[Move {}/N] Capturing screenshot from device...",
+                    move_number
+                );
+                log::info!("  Device: {}", device_serial);
+                log::info!("  Output: {:?}", output_path);
+
+                let path = adb::capture_screenshot(device_serial, output_path)
+                    .context("Failed to capture screenshot via ADB")?;
+
+                log::info!("  ✓ Screenshot captured");
+
+                Ok(path)
             }
         }
     }
