@@ -11,8 +11,10 @@ pub mod capture;
 pub mod decision;
 pub mod executor;
 pub mod loop_controller;
+mod expectimax_solver;
 
 pub use capture::ScreenshotSource;
 pub use decision::{SimpleSolver, SimpleStrategy};
 pub use executor::ActionExecutor;
 pub use loop_controller::AutomationLoop;
+pub use expectimax_solver::{ExpectimaxSolver, SolverStrategy};
