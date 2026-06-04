@@ -2,13 +2,33 @@
 //!
 //! Orchestrates: Capture → Detect → Decide → Execute → Repeat
 
-use super::{ActionExecutor, ScreenshotSource, SimpleSolver};
+use super::ActionExecutor;
+use super::ScreenshotSource;
 use anyhow::{Context, Result};
 use atomas_core::elements::Data;
-use atomas_cv::{DetectionConfig, GameStateDetector, map_decision_to_coordinates};
+use atomas_cv::{Decision, DetectionConfig, DetectionResult, GameStateDetector, map_decision_to_coordinates};
+
+/// Trait for solvers that can choose moves
+pub trait DecisionSolver {
+    fn choose_move(&mut self, detection: &DetectionResult) -> Result<Decision>;
+}
+
+// Implement for SimpleSolver
+impl DecisionSolver for super::SimpleSolver {
+    fn choose_move(&mut self, detection: &DetectionResult) -> Result<Decision> {
+        self.choose_move(detection)
+    }
+}
+
+// Implement for ExpectimaxSolver
+impl DecisionSolver for super::ExpectimaxSolver {
+    fn choose_move(&mut self, detection: &DetectionResult) -> Result<Decision> {
+        self.choose_move(detection)
+    }
+}
 
 /// Statistics for the automation loop
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct LoopStats {
     pub total_moves: usize,
     pub successful_moves: usize,
@@ -26,10 +46,10 @@ impl LoopStats {
     }
 }
 
-/// Main automation loop
-pub struct AutomationLoop {
+/// Main automation loop (generic over solver type)
+pub struct AutomationLoop<S: DecisionSolver> {
     screenshot_source: ScreenshotSource,
-    solver: SimpleSolver,
+    solver: S,
     executor: ActionExecutor,
     detector: GameStateDetector,
     elements_data: Data,
@@ -37,11 +57,11 @@ pub struct AutomationLoop {
     stats: LoopStats,
 }
 
-impl AutomationLoop {
+impl<S: DecisionSolver> AutomationLoop<S> {
     /// Create a new automation loop
     pub fn new(
         screenshot_source: ScreenshotSource,
-        solver: SimpleSolver,
+        solver: S,
         executor: ActionExecutor,
         max_moves: usize,
     ) -> Result<Self> {
@@ -69,8 +89,7 @@ impl AutomationLoop {
     /// Run the automation loop for the configured number of moves
     pub fn run(&mut self) -> Result<()> {
         log::info!("==========================================================");
-        log::info!("MILESTONE 2: Automation Loop");
-        log::info!("Mode: dry-run (Phase 1)");
+        log::info!("MILESTONE 2+3: Automation Loop with Solver");
         log::info!("Max moves: {}", self.max_moves);
         log::info!("==========================================================\n");
 
@@ -137,7 +156,7 @@ impl AutomationLoop {
             anyhow::bail!("No ring atoms detected - cannot choose move");
         }
 
-        // Step 3: Choose move using simple strategy
+        // Step 3: Choose move using solver
         log::info!("[Move {}/{}] Choosing move...", move_number, self.max_moves);
         let decision = self
             .solver
@@ -177,7 +196,7 @@ impl AutomationLoop {
     }
 
     /// Get current statistics
-    pub fn stats(&self) -> &LoopStats {
-        &self.stats
+    pub fn stats(&self) -> LoopStats {
+        self.stats.clone()
     }
 }

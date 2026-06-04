@@ -2,23 +2,41 @@
 //!
 //! Phase 1: Dry-run mode (no emulator required)
 //! Phase 2: ADB integration
+//! Milestone 3 Stage 3: Solver integration
 
 use anyhow::{Context, Result};
 use clap::Parser;
 use std::path::PathBuf;
 
 mod automation;
+mod solver_integration;
 
 use automation::executor::ExecutionMode;
 use automation::{
-    ActionExecutor, AutomationLoop, ScreenshotSource, SimpleSolver, SimpleStrategy, adb,
+    ActionExecutor, AutomationLoop, ExpectimaxSolver, ScreenshotSource, SimpleSolver,
+    SimpleStrategy, SolverStrategy, adb,
 };
 
-/// Milestone 2: Automation Loop for Atomas
+/// Decision solver selection
+enum SolverChoice {
+    Simple(SimpleSolver),
+    Expectimax(ExpectimaxSolver),
+}
+
+impl SolverChoice {
+    fn choose_move(&mut self, detection: &atomas_cv::DetectionResult) -> Result<atomas_cv::Decision> {
+        match self {
+            Self::Simple(s) => s.choose_move(detection),
+            Self::Expectimax(s) => s.choose_move(detection),
+        }
+    }
+}
+
+/// Milestone 2+3: Automation Loop for Atomas with Solver Integration
 #[derive(Parser, Debug)]
 #[command(name = "milestone2")]
 #[command(about = "Automation loop: Capture → Detect → Decide → Execute → Repeat")]
-#[command(version = "0.2.0")]
+#[command(version = "0.3.0")]
 struct Args {
     /// Enable ADB mode (requires emulator/device)
     #[arg(long)]
@@ -48,9 +66,17 @@ struct Args {
     #[arg(long, default_value_t = 10)]
     moves: usize,
 
-    /// Decision strategy: random, prefer-insert, prefer-remove
+    /// Solver type: simple (default), expectimax, expectimax-fast, expectimax-thorough
+    #[arg(long, default_value = "simple")]
+    solver: String,
+
+    /// Simple solver strategy: random, prefer-insert, prefer-remove (only used with --solver simple)
     #[arg(long, default_value = "prefer-insert")]
     strategy: String,
+
+    /// Expectimax solver depth (only used with --solver expectimax)
+    #[arg(long)]
+    solver_depth: Option<usize>,
 
     /// Verbose logging
     #[arg(short, long)]
@@ -72,23 +98,17 @@ fn main() -> Result<()> {
     }
 
     // Determine mode (default to dry-run if neither specified)
-    let use_adb = args.adb || (!args.dry_run && !args.adb);
     let use_adb = args.adb; // Explicit ADB mode only
 
     if !args.adb && !args.dry_run {
         log::info!("No mode specified, defaulting to --dry-run");
     }
 
-    // Parse strategy
-    let strategy = SimpleStrategy::from_str(&args.strategy).ok_or_else(|| {
-        anyhow::anyhow!(
-            "Invalid strategy: '{}'. Valid options: random, prefer-insert, prefer-remove",
-            args.strategy
-        )
-    })?;
+    // Setup solver
+    let solver_choice = setup_solver(&args)?;
 
     // Setup components based on mode
-    let (screenshot_source, execution_mode) = if args.adb {
+    let (screenshot_source, execution_mode) = if use_adb {
         // ADB Mode
         log::info!("=== ADB Mode ===");
 
@@ -128,27 +148,72 @@ fn main() -> Result<()> {
         .is_available()
         .context("Screenshot source not available")?;
 
-    let solver = SimpleSolver::new(strategy);
     let executor = ActionExecutor::new(execution_mode);
 
-    // Create and run automation loop
-    let mut automation_loop = AutomationLoop::new(screenshot_source, solver, executor, args.moves)?;
-
-    automation_loop.run()?;
+    // Create and run automation loop with appropriate solver
+    let result = match solver_choice {
+        SolverChoice::Simple(solver) => {
+            let mut automation_loop =
+                AutomationLoop::new(screenshot_source, solver, executor, args.moves)?;
+            automation_loop.run()?;
+            automation_loop.stats()
+        }
+        SolverChoice::Expectimax(solver) => {
+            let mut automation_loop =
+                AutomationLoop::new(screenshot_source, solver, executor, args.moves)?;
+            automation_loop.run()?;
+            automation_loop.stats()
+        }
+    };
 
     // Check results
-    let stats = automation_loop.stats();
-    if stats.failed_moves > 0 {
+    if result.failed_moves > 0 {
         log::warn!("Some moves failed. Check logs above for details.");
         log::warn!(
             "Success rate: {:.1}% ({}/{} successful)",
-            stats.success_rate(),
-            stats.successful_moves,
-            stats.total_moves
+            result.success_rate(),
+            result.successful_moves,
+            result.total_moves
         );
     } else {
         log::info!("✓ All moves completed successfully!");
     }
 
     Ok(())
+}
+
+fn setup_solver(args: &Args) -> Result<SolverChoice> {
+    let solver_type = args.solver.to_lowercase();
+
+    if solver_type == "simple" {
+        // Parse strategy for simple solver
+        let strategy = SimpleStrategy::from_str(&args.strategy).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Invalid strategy: '{}'. Valid options: random, prefer-insert, prefer-remove",
+                args.strategy
+            )
+        })?;
+
+        let solver = SimpleSolver::new(strategy);
+        Ok(SolverChoice::Simple(solver))
+    } else {
+        // Parse expectimax solver type
+        let strategy = SolverStrategy::from_str(&solver_type).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Invalid solver: '{}'. Valid options: simple, expectimax, expectimax-fast, expectimax-thorough",
+                args.solver
+            )
+        })?;
+
+        let solver = if let Some(depth) = args.solver_depth {
+            if depth == 0 || depth > 5 {
+                anyhow::bail!("Solver depth must be between 1 and 5");
+            }
+            ExpectimaxSolver::with_depth(depth)
+        } else {
+            ExpectimaxSolver::new(strategy)
+        };
+
+        Ok(SolverChoice::Expectimax(solver))
+    }
 }
