@@ -1,7 +1,9 @@
 pub mod elements;
-pub mod ring;
 pub mod game;
+pub mod ring;
+pub mod solver;
 
 // Re-export commonly used items
-pub use elements::{Data, Element, Id, ElementType, SpecialAtom};
-pub use game::{Atom, Action, GameState};
+pub use elements::{Data, Element, ElementType, Id, SpecialAtom};
+pub use game::{Action, Atom, GameState};
+pub use solver::{Solver, SolverConfig, SolverResult, solve, solve_fast};
