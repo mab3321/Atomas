@@ -7,16 +7,15 @@ use crate::action::{ActionCoordinates, Decision};
 use crate::utils::ImageUtils;
 use anyhow::Context;
 use opencv::{
-    core::{Mat, Point, Scalar, Size},
+    core::{self, Mat, Point, Scalar},
     imgproc::{self, FONT_HERSHEY_SIMPLEX, LINE_AA},
-    prelude::*,
 };
 use std::path::Path;
 
 /// Colors for overlay markers (BGR format for OpenCV)
 const COLOR_INSERT: Scalar = Scalar::new(0.0, 255.0, 255.0, 255.0); // Yellow
-const COLOR_REMOVE: Scalar = Scalar::new(0.0, 0.0, 255.0, 255.0);   // Red
-const COLOR_TEXT_BG: Scalar = Scalar::new(0.0, 0.0, 0.0, 255.0);    // Black
+const COLOR_REMOVE: Scalar = Scalar::new(0.0, 0.0, 255.0, 255.0); // Red
+const COLOR_TEXT_BG: Scalar = Scalar::new(0.0, 0.0, 0.0, 255.0); // Black
 
 /// Draw an action overlay on a screenshot
 ///
@@ -143,10 +142,15 @@ fn draw_label(
 
     // Draw black background rectangle for text
     let padding = 5;
+    let rect = core::Rect::new(
+        text_x - padding,
+        text_y - text_size.height - padding,
+        text_size.width + 2 * padding,
+        text_size.height + baseline + 2 * padding,
+    );
     imgproc::rectangle(
         image,
-        Point::new(text_x - padding, text_y - text_size.height - padding),
-        Point::new(text_x + text_size.width + padding, text_y + baseline + padding),
+        rect,
         COLOR_TEXT_BG,
         -1, // Filled
         LINE_AA,
