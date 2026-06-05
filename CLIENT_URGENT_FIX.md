@@ -1,5 +1,16 @@
 # ⚠️ URGENT: Client Needs to Pull Latest Code
 
+## ✅ UPDATE: All Branches Now Fixed!
+
+**We've pushed fixes to ALL three milestone branches:**
+- ✅ `milestone1-move-output` (commit **8708c5c**)
+- ✅ `milestone2-phase1-dry-run` (commit **bdb6626**)
+- ✅ `milestone3-stage2-expectimax-solver` (commit **dc6f8ea**)
+
+**All branches now compile successfully in Docker!**
+
+---
+
 ## 🔴 Problem Identified
 
 The error messages show you're running **OLD CODE** (before our fixes were applied).
@@ -35,13 +46,18 @@ git branch --show-current
 # 2. Fetch latest changes
 git fetch origin
 
-# 3. Ensure you're on the right branch
-git checkout milestone3-stage2-expectimax-solver
+# 3. Choose which branch to test:
+#    - milestone1-move-output (testing milestone 1)
+#    - milestone2-phase1-dry-run (testing milestone 2 phase 1)
+#    - milestone3-stage2-expectimax-solver (testing milestone 3)
+
+# For example, to test milestone2:
+git checkout milestone2-phase1-dry-run
 
 # 4. HARD reset to latest (WARNING: discards local changes)
-git reset --hard origin/milestone3-stage2-expectimax-solver
+git reset --hard origin/milestone2-phase1-dry-run
 
-# 5. Verify latest commit (should be 97aee03)
+# 5. Verify you have the fix (should show commit with "Fix OpenCV rectangle")
 git log --oneline -1
 
 # 6. Clean build
