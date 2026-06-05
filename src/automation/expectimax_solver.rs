@@ -6,7 +6,9 @@ use anyhow::{Context, Result};
 use atomas_core::{Solver, SolverConfig};
 use atomas_cv::{Decision, DetectionResult};
 
-use crate::solver_integration::{detection_to_core_state, solver_action_to_decision, format_solver_action};
+use crate::solver_integration::{
+    detection_to_core_state, format_solver_action, solver_action_to_decision,
+};
 
 /// Solver strategy selection
 #[derive(Debug, Clone, Copy)]
@@ -55,10 +57,7 @@ impl ExpectimaxSolver {
 
         log::info!("=================================================");
         log::info!("Using EXPECTIMAX solver: {}", strategy.as_str());
-        log::info!(
-            "  Depth: {}",
-            solver.config().expectimax_config.max_depth
-        );
+        log::info!("  Depth: {}", solver.config().expectimax_config.max_depth);
         log::info!(
             "  Spawn samples: {}",
             solver.config().expectimax_config.max_spawns_per_node
@@ -97,10 +96,12 @@ impl ExpectimaxSolver {
             core_state.player_atom.value
         );
 
-        // Run solver
+        // Run solver — solve() returns Result<_, String>, so map the error into
+        // anyhow::Error before calling .context() (String doesn't impl std::error::Error).
         let solver_result = self
             .solver
             .solve(&core_state)
+            .map_err(anyhow::Error::msg)
             .context("Solver failed to find a move")?;
 
         log::info!(

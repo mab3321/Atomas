@@ -6,7 +6,9 @@ use super::ActionExecutor;
 use super::ScreenshotSource;
 use anyhow::{Context, Result};
 use atomas_core::elements::Data;
-use atomas_cv::{Decision, DetectionConfig, DetectionResult, GameStateDetector, map_decision_to_coordinates};
+use atomas_cv::{
+    Decision, DetectionConfig, DetectionResult, GameStateDetector, map_decision_to_coordinates,
+};
 
 /// Trait for solvers that can choose moves
 pub trait DecisionSolver {
@@ -16,14 +18,16 @@ pub trait DecisionSolver {
 // Implement for SimpleSolver
 impl DecisionSolver for super::SimpleSolver {
     fn choose_move(&mut self, detection: &DetectionResult) -> Result<Decision> {
-        self.choose_move(detection)
+        // Call the inherent method on SimpleSolver directly, not the trait method.
+        super::SimpleSolver::choose_move(self, detection)
     }
 }
 
 // Implement for ExpectimaxSolver
 impl DecisionSolver for super::ExpectimaxSolver {
     fn choose_move(&mut self, detection: &DetectionResult) -> Result<Decision> {
-        self.choose_move(detection)
+        // Call the inherent method on ExpectimaxSolver directly, not the trait method.
+        super::ExpectimaxSolver::choose_move(self, detection)
     }
 }
 
@@ -52,7 +56,7 @@ pub struct AutomationLoop<S: DecisionSolver> {
     solver: S,
     executor: ActionExecutor,
     detector: GameStateDetector,
-    elements_data: Data,
+    elements_data: Data<'static>,
     max_moves: usize,
     stats: LoopStats,
 }
