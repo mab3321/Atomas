@@ -65,10 +65,11 @@ pub fn map_decision_to_coordinates(
             minus_index,
             target_index,
         } => {
-            // Minus atom: tap the target atom to remove it
-            // The game will handle removing both the minus position and target
+            // Minus atom: tap the atom you want to remove (target_index)
+            // The game will handle placing the minus and removing both atoms
+            // NOTE: If this doesn't work, try tapping the gap at minus_index instead
             println!(
-                "UseMinus: placing minus at {} to remove target at {} → tapping target",
+                "UseMinus: minus at index {}, removing target at index {} → tapping target atom",
                 minus_index, target_index
             );
             get_atom_coordinates(&detection_result.ring_elements, *target_index)
