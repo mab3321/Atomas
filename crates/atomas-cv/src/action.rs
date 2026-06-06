@@ -15,6 +15,13 @@ pub enum Decision {
     Insert { gap_index: usize },
     /// Remove an atom from the ring
     Remove { atom_index: usize },
+    /// Use a Plus atom to fuse adjacent equal atoms
+    UsePlus { plus_index: usize },
+    /// Use a Minus atom: places at minus_index, removes target_index (both are removed from ring)
+    UseMinus {
+        minus_index: usize,
+        target_index: usize,
+    },
 }
 
 /// Screen coordinates for executing a decision
@@ -49,6 +56,22 @@ pub fn map_decision_to_coordinates(
         }
         Decision::Remove { atom_index } => {
             get_atom_coordinates(&detection_result.ring_elements, *atom_index)
+        }
+        Decision::UsePlus { plus_index } => {
+            // Plus atom is placed at a gap position
+            calculate_gap_coordinates(&detection_result.ring_elements, *plus_index)
+        }
+        Decision::UseMinus {
+            minus_index,
+            target_index,
+        } => {
+            // Minus atom: tap the target atom to remove it
+            // The game will handle removing both the minus position and target
+            println!(
+                "UseMinus: placing minus at {} to remove target at {} → tapping target",
+                minus_index, target_index
+            );
+            get_atom_coordinates(&detection_result.ring_elements, *target_index)
         }
     }
 }

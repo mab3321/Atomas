@@ -48,7 +48,7 @@ pub fn detection_to_core_state(detection: &DetectionResult) -> Result<CoreGameSt
 /// Convert solver action to automation decision
 ///
 /// Maps the solver's Action enum (which includes UsePlus and UseMinus)
-/// to the simpler Decision enum used by the automation system.
+/// to the Decision enum used by the automation system.
 pub fn solver_action_to_decision(action: &atomas_core::Action) -> Result<Decision> {
     match action {
         atomas_core::Action::Insert { gap_index } => Ok(Decision::Insert {
@@ -56,11 +56,9 @@ pub fn solver_action_to_decision(action: &atomas_core::Action) -> Result<Decisio
         }),
 
         atomas_core::Action::UsePlus { plus_index } => {
-            // Plus atom should be placed at a position
-            // We map this to an Insert at that position
-            log::debug!("Converting UsePlus(pos={}) to Insert", plus_index);
-            Ok(Decision::Insert {
-                gap_index: *plus_index,
+            log::debug!("Converting UsePlus(pos={}) to Decision::UsePlus", plus_index);
+            Ok(Decision::UsePlus {
+                plus_index: *plus_index,
             })
         }
 
@@ -68,18 +66,14 @@ pub fn solver_action_to_decision(action: &atomas_core::Action) -> Result<Decisio
             minus_index,
             target_index,
         } => {
-            // Minus atom removes both the minus position and target
-            // We map this to Remove at the minus_index
-            // Note: The actual game logic might need both indices,
-            // but the current Decision enum only supports single Remove
             log::debug!(
-                "Converting UseMinus(minus={}, target={}) to Insert at minus position",
+                "Converting UseMinus(minus={}, target={}) to Decision::UseMinus",
                 minus_index,
                 target_index
             );
-            // For now, place the minus atom at its position
-            Ok(Decision::Insert {
-                gap_index: *minus_index,
+            Ok(Decision::UseMinus {
+                minus_index: *minus_index,
+                target_index: *target_index,
             })
         }
     }
@@ -156,8 +150,8 @@ mod tests {
         let action = atomas_core::Action::UsePlus { plus_index: 1 };
         let decision = solver_action_to_decision(&action).unwrap();
 
-        // Plus gets converted to Insert
-        assert!(matches!(decision, Decision::Insert { .. }));
+        // Plus gets converted to Decision::UsePlus
+        assert!(matches!(decision, Decision::UsePlus { plus_index: 1 }));
     }
 
     #[test]
@@ -168,8 +162,14 @@ mod tests {
         };
         let decision = solver_action_to_decision(&action).unwrap();
 
-        // Minus gets converted to Insert (placing the minus)
-        assert!(matches!(decision, Decision::Insert { .. }));
+        // Minus gets converted to Decision::UseMinus
+        assert!(matches!(
+            decision,
+            Decision::UseMinus {
+                minus_index: 1,
+                target_index: 3
+            }
+        ));
     }
 
     #[test]
