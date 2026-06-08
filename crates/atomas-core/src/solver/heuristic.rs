@@ -89,6 +89,20 @@ fn count_merge_potential(state: &GameState) -> usize {
         }
     }
 
+    // CRITICAL: Count potential Plus fusion opportunities
+    // Look for positions where placing a Plus between two equal atoms would work
+    for i in 0..n {
+        let next_idx = (i + 1) % n;
+        let current = state.ring[i];
+        let next = state.ring[next_idx];
+
+        // If we have two adjacent equal regular atoms, a Plus between them is VERY valuable
+        if current.is_regular() && next.is_regular() && current.value == next.value {
+            // This is a prime fusion opportunity - weight it heavily
+            count += 5; // Much higher value for potential Plus fusion
+        }
+    }
+
     count
 }
 
@@ -116,8 +130,46 @@ pub fn evaluate_action_outcome(
     // Future potential (heuristic of resulting state)
     let future_value = evaluate_state(resulting_state, weights);
 
+    // CRITICAL BONUS: If this action caused a score increase (fusion happened), heavily reward it
+    let fusion_bonus = if score_gain > 0.0 {
+        score_gain * 10.0 // Massive bonus for successful fusions
+    } else {
+        0.0
+    };
+
     // Combine immediate and future value
-    score_gain * 2.0 + future_value * 0.5
+    score_gain * 2.0 + future_value * 0.5 + fusion_bonus
+}
+
+/// Check if a Plus atom placement at a position would create a fusion
+/// Returns the score that would be gained (0 if no fusion)
+pub fn evaluate_plus_placement(state: &GameState, plus_index: usize) -> f64 {
+    if state.ring.len() < 2 {
+        return 0.0;
+    }
+
+    let n = state.ring.len();
+    let left_idx = (plus_index + n - 1) % n;
+    let right_idx = (plus_index + 1) % n;
+
+    let left = state.ring[left_idx];
+    let right = state.ring[right_idx];
+
+    // Check if placing Plus here would cause a fusion
+    if left.is_regular() && right.is_regular() && left.value == right.value {
+        // This placement WILL cause a fusion!
+        // Return a very high value based on the fusion value
+        let fusion_value = left.value;
+        let base_score = (fusion_value as f64) * 10.0;
+
+        // Higher-value fusions are even more valuable
+        let value_multiplier = 1.0 + (fusion_value as f64 * 0.5);
+
+        base_score * value_multiplier * 100.0 // Massive reward for correct Plus placement
+    } else {
+        // Placing Plus here does NOTHING useful - heavily penalize
+        -50.0 // Negative score for wasting a Plus atom
+    }
 }
 
 #[cfg(test)]

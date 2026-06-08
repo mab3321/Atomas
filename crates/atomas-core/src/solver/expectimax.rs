@@ -1,4 +1,4 @@
-use super::heuristic::{HeuristicWeights, evaluate_state};
+use super::heuristic::{HeuristicWeights, evaluate_state, evaluate_plus_placement};
 use super::movegen::generate_legal_actions;
 use super::spawn::SpawnConfig;
 use crate::{Action, GameState};
@@ -73,18 +73,32 @@ fn expectimax_max_node(
     config: &ExpectimaxConfig,
     depth: usize,
 ) -> Result<(f64, usize), String> {
+    // CRITICAL: For Plus atom actions, evaluate if this placement creates a fusion
+    let plus_placement_bonus = if let Action::UsePlus { plus_index } = action {
+        evaluate_plus_placement(state, *plus_index)
+    } else {
+        0.0
+    };
+
     // Apply the action
     let next_state = state.apply_action(action)?;
     let mut nodes_evaluated = 1;
 
     // If we've reached max depth, evaluate with heuristic
     if depth >= config.max_depth {
-        let value = evaluate_state(&next_state, heuristic_weights);
+        let value = evaluate_state(&next_state, heuristic_weights) + plus_placement_bonus;
         return Ok((value, nodes_evaluated));
     }
 
     // Get immediate score gain
     let immediate_value = (next_state.score - state.score) as f64;
+
+    // HUGE BONUS if this action resulted in a score increase (successful fusion/merge)
+    let fusion_success_bonus = if immediate_value > 0.0 {
+        immediate_value * 50.0 // Massive reward for successful fusions
+    } else {
+        0.0
+    };
 
     // Chance node: evaluate expected value over possible spawns
     let (expected_future_value, spawn_nodes) = expectimax_chance_node(
@@ -97,8 +111,11 @@ fn expectimax_max_node(
 
     nodes_evaluated += spawn_nodes;
 
-    // Combine immediate and expected future value
-    let total_value = immediate_value * 2.0 + expected_future_value * 0.8;
+    // Combine all values with heavy weight on successful actions
+    let total_value = immediate_value * 2.0
+        + expected_future_value * 0.8
+        + plus_placement_bonus
+        + fusion_success_bonus;
 
     Ok((total_value, nodes_evaluated))
 }
