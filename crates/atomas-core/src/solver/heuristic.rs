@@ -213,7 +213,7 @@ fn check_for_fusion_opportunities(state: &GameState) -> bool {
 }
 
 /// Evaluate an Insert action - prefer positions that create adjacent matching pairs
-pub fn evaluate_insert_position(state: &GameState, gap_index: usize, atom_value: i8) -> f64 {
+pub fn evaluate_insert_position(state: &GameState, gap_index: usize, atom_value: i16) -> f64 {
     if state.ring.is_empty() {
         return 0.0;
     }
