@@ -44,6 +44,13 @@ pub fn expectimax_search(
     let mut best_value = f64::NEG_INFINITY;
     let mut nodes_evaluated = 0;
 
+    // DEBUG: Log if this is a Plus atom turn
+    if state.player_atom.is_plus() {
+        eprintln!("\n[EXPECTIMAX] === PLUS ATOM TURN ===");
+        eprintln!("[EXPECTIMAX] Ring: {:?}", state.ring.iter().map(|a| a.value).collect::<Vec<_>>());
+        eprintln!("[EXPECTIMAX] Evaluating {} Plus placements...", actions.len());
+    }
+
     // Evaluate each action
     for action in &actions {
         let (value, nodes) =
@@ -51,10 +58,25 @@ pub fn expectimax_search(
 
         nodes_evaluated += nodes;
 
+        // DEBUG: Log each Plus action evaluation
+        if state.player_atom.is_plus() {
+            if let Action::UsePlus { plus_index } = action {
+                eprintln!("[EXPECTIMAX] Position {}: value={:.2}", plus_index, value);
+            }
+        }
+
         if value > best_value {
             best_value = value;
             best_action = *action;
         }
+    }
+
+    // DEBUG: Log final choice
+    if state.player_atom.is_plus() {
+        if let Action::UsePlus { plus_index } = best_action {
+            eprintln!("[EXPECTIMAX] ⭐ CHOSEN: Position {} (value={:.2})", plus_index, best_value);
+        }
+        eprintln!("[EXPECTIMAX] === END PLUS TURN ===\n");
     }
 
     Ok(ExpectimaxResult {

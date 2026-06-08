@@ -162,6 +162,10 @@ pub fn evaluate_plus_placement(state: &GameState, plus_index: usize) -> f64 {
     let left = state.ring[left_idx];
     let right = state.ring[right_idx];
 
+    // DEBUG: Log what we're evaluating
+    eprintln!("[PLUS_EVAL] Position {}: left[{}]={}, right[{}]={}",
+             plus_index, left_idx, left.value, right_idx, right.value);
+
     // Check if placing Plus here would cause a fusion
     if left.is_regular() && right.is_regular() && left.value == right.value {
         // This placement WILL cause a fusion!
@@ -176,19 +180,22 @@ pub fn evaluate_plus_placement(state: &GameState, plus_index: usize) -> f64 {
         // C+C (6+6) → N: ~1800 points
         let value_multiplier = (fusion_value as f64).powf(1.5);
 
-        base_score * value_multiplier * 100.0 // Massive reward for correct Plus placement
+        let reward = base_score * value_multiplier * 100.0;
+        eprintln!("[PLUS_EVAL] ✅ FUSION! value={} -> reward={}", fusion_value, reward);
+        reward // Massive reward for correct Plus placement
     } else {
         // Placing Plus here does NOTHING useful - MASSIVELY PENALIZE
         // Check if there ARE better opportunities available in the ring
         let has_better_option = check_for_fusion_opportunities(state);
 
-        if has_better_option {
-            // There's a good placement available but this isn't it - HUGE penalty
+        let penalty = if has_better_option {
+            eprintln!("[PLUS_EVAL] ❌ BAD! Other fusion exists -> penalty=-500");
             -500.0 // Severe penalty for ignoring a good fusion opportunity
         } else {
-            // No good placements available, but still bad to waste Plus
+            eprintln!("[PLUS_EVAL] ❌ BAD! No fusions available -> penalty=-100");
             -100.0 // Still penalize, but less severely
-        }
+        };
+        penalty
     }
 }
 
