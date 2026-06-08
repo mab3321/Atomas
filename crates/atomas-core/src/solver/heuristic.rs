@@ -20,10 +20,10 @@ impl Default for HeuristicWeights {
     fn default() -> Self {
         Self {
             score_weight: 1.0,
-            merge_potential_weight: 10.0,
-            highest_atom_weight: 5.0,
-            ring_size_penalty: -2.0,
-            diversity_weight: 2.0,
+            merge_potential_weight: 15.0,  // Increased - creating merge opportunities is critical
+            highest_atom_weight: 8.0,      // Increased - progressing to higher atoms is key
+            ring_size_penalty: -3.0,       // More aggressive - keep ring small
+            diversity_weight: 1.0,         // Decreased - focus on merges, not variety
         }
     }
 }
@@ -70,7 +70,10 @@ fn count_merge_potential(state: &GameState) -> usize {
         let next = state.ring[(i + 1) % n];
 
         if current.is_regular() && next.is_regular() && current.value == next.value {
-            count += 1;
+            // Adjacent matching atoms - PRIME fusion opportunity
+            // Weight by atom value - higher atoms are worth more
+            let value_weight = (current.value as usize).max(1);
+            count += 10 * value_weight; // Much higher base value, scaled by atom
         }
     }
 
@@ -85,21 +88,25 @@ fn count_merge_potential(state: &GameState) -> usize {
 
         if current.is_plus() && left.is_regular() && right.is_regular() && left.value == right.value
         {
-            count += 2; // X-+-X is worth more
+            // Ready-to-use fusion - even more valuable
+            let value_weight = (left.value as usize).max(1);
+            count += 15 * value_weight; // X-+-X is immediate fusion potential
         }
     }
 
-    // CRITICAL: Count potential Plus fusion opportunities
-    // Look for positions where placing a Plus between two equal atoms would work
-    for i in 0..n {
-        let next_idx = (i + 1) % n;
-        let current = state.ring[i];
-        let next = state.ring[next_idx];
+    // Reward having multiple different atoms that could potentially merge in future
+    // (helps with ring management)
+    let mut value_counts = std::collections::HashMap::new();
+    for atom in &state.ring {
+        if atom.is_regular() {
+            *value_counts.entry(atom.value).or_insert(0) += 1;
+        }
+    }
 
-        // If we have two adjacent equal regular atoms, a Plus between them is VERY valuable
-        if current.is_regular() && next.is_regular() && current.value == next.value {
-            // This is a prime fusion opportunity - weight it heavily
-            count += 5; // Much higher value for potential Plus fusion
+    // For each value that appears 2+ times, that's potential for future merges
+    for (_value, count_of_value) in value_counts {
+        if count_of_value >= 2 {
+            count += count_of_value; // Reward having multiple of same atom
         }
     }
 
@@ -162,14 +169,83 @@ pub fn evaluate_plus_placement(state: &GameState, plus_index: usize) -> f64 {
         let fusion_value = left.value;
         let base_score = (fusion_value as f64) * 10.0;
 
-        // Higher-value fusions are even more valuable
-        let value_multiplier = 1.0 + (fusion_value as f64 * 0.5);
+        // Higher-value fusions are EXPONENTIALLY more valuable
+        // He+He (2+2) → Li: ~200 points
+        // Li+Li (3+3) → Be: ~450 points
+        // Be+Be (4+4) → B: ~800 points
+        // C+C (6+6) → N: ~1800 points
+        let value_multiplier = (fusion_value as f64).powf(1.5);
 
         base_score * value_multiplier * 100.0 // Massive reward for correct Plus placement
     } else {
-        // Placing Plus here does NOTHING useful - heavily penalize
-        -50.0 // Negative score for wasting a Plus atom
+        // Placing Plus here does NOTHING useful - MASSIVELY PENALIZE
+        // Check if there ARE better opportunities available in the ring
+        let has_better_option = check_for_fusion_opportunities(state);
+
+        if has_better_option {
+            // There's a good placement available but this isn't it - HUGE penalty
+            -500.0 // Severe penalty for ignoring a good fusion opportunity
+        } else {
+            // No good placements available, but still bad to waste Plus
+            -100.0 // Still penalize, but less severely
+        }
     }
+}
+
+/// Check if there are any fusion opportunities in the ring (adjacent matching atoms)
+fn check_for_fusion_opportunities(state: &GameState) -> bool {
+    let n = state.ring.len();
+    if n < 2 {
+        return false;
+    }
+
+    for i in 0..n {
+        let current = state.ring[i];
+        let next = state.ring[(i + 1) % n];
+
+        // If we find ANY pair of matching regular atoms, that's a fusion opportunity
+        if current.is_regular() && next.is_regular() && current.value == next.value {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Evaluate an Insert action - prefer positions that create adjacent matching pairs
+pub fn evaluate_insert_position(state: &GameState, gap_index: usize, atom_value: i8) -> f64 {
+    if state.ring.is_empty() {
+        return 0.0;
+    }
+
+    let n = state.ring.len();
+    let left_idx = if gap_index == 0 { n - 1 } else { gap_index - 1 };
+    let right_idx = gap_index % n;
+
+    let left = state.ring[left_idx];
+    let right = state.ring[right_idx];
+
+    let mut bonus = 0.0;
+
+    // BEST: Inserting between two atoms of same value creates potential for TWO merges
+    if left.is_regular() && right.is_regular()
+       && left.value == atom_value && right.value == atom_value {
+        // Sandwiched between two matching atoms - creates merge chain opportunity
+        bonus += 100.0 * (atom_value as f64);
+    }
+    // GOOD: Inserting next to one matching atom creates merge opportunity
+    else if left.is_regular() && left.value == atom_value {
+        bonus += 30.0 * (atom_value as f64);
+    }
+    else if right.is_regular() && right.value == atom_value {
+        bonus += 30.0 * (atom_value as f64);
+    }
+    // AVOID: Inserting increases ring size without merge potential
+    else {
+        bonus -= 5.0;
+    }
+
+    bonus
 }
 
 #[cfg(test)]

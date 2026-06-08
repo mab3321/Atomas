@@ -1,4 +1,4 @@
-use super::heuristic::{HeuristicWeights, evaluate_state, evaluate_plus_placement};
+use super::heuristic::{HeuristicWeights, evaluate_state, evaluate_plus_placement, evaluate_insert_position};
 use super::movegen::generate_legal_actions;
 use super::spawn::SpawnConfig;
 use crate::{Action, GameState};
@@ -73,25 +73,59 @@ fn expectimax_max_node(
     config: &ExpectimaxConfig,
     depth: usize,
 ) -> Result<(f64, usize), String> {
-    // CRITICAL: For Plus atom actions, evaluate if this placement creates a fusion
-    let plus_placement_bonus = if let Action::UsePlus { plus_index } = action {
-        evaluate_plus_placement(state, *plus_index)
-    } else {
-        0.0
-    };
-
     // Apply the action
     let next_state = state.apply_action(action)?;
     let mut nodes_evaluated = 1;
 
-    // If we've reached max depth, evaluate with heuristic
-    if depth >= config.max_depth {
-        let value = evaluate_state(&next_state, heuristic_weights) + plus_placement_bonus;
-        return Ok((value, nodes_evaluated));
-    }
-
     // Get immediate score gain
     let immediate_value = (next_state.score - state.score) as f64;
+
+    // CRITICAL: For Plus atom actions, the placement quality is THE PRIMARY FACTOR
+    // This must DOMINATE all other considerations to ensure correct Plus usage
+    if let Action::UsePlus { plus_index } = action {
+        let plus_quality = evaluate_plus_placement(state, *plus_index);
+
+        // If this is a BAD Plus placement (negative score), return IMMEDIATELY with massive penalty
+        // This prevents the bot from EVER choosing a wasteful Plus placement
+        if plus_quality < 0.0 {
+            return Ok((plus_quality * 1000.0, nodes_evaluated)); // -50,000 penalty
+        }
+
+        // If this is a GOOD Plus placement, the quality score becomes the PRIMARY value
+        // Add the immediate score gain as confirmation, but Plus quality dominates
+        if depth >= config.max_depth {
+            return Ok((plus_quality + immediate_value * 100.0, nodes_evaluated));
+        }
+
+        // For good Plus placements at non-leaf nodes, heavily weight the placement quality
+        let (expected_future_value, spawn_nodes) = expectimax_chance_node(
+            &next_state,
+            spawn_config,
+            heuristic_weights,
+            config,
+            depth + 1,
+        )?;
+        nodes_evaluated += spawn_nodes;
+
+        // Plus quality is the DOMINANT factor (10x weight)
+        let total_value = plus_quality * 10.0
+                        + immediate_value * 100.0
+                        + expected_future_value * 0.5;
+        return Ok((total_value, nodes_evaluated));
+    }
+
+    // For Insert actions, evaluate strategic placement
+    let insert_bonus = if let Action::Insert { gap_index } = action {
+        evaluate_insert_position(state, *gap_index, state.player_atom.value)
+    } else {
+        0.0
+    };
+
+    // For non-Plus actions, use standard evaluation
+    if depth >= config.max_depth {
+        let value = evaluate_state(&next_state, heuristic_weights) + insert_bonus;
+        return Ok((value, nodes_evaluated));
+    }
 
     // HUGE BONUS if this action resulted in a score increase (successful fusion/merge)
     let fusion_success_bonus = if immediate_value > 0.0 {
@@ -114,8 +148,8 @@ fn expectimax_max_node(
     // Combine all values with heavy weight on successful actions
     let total_value = immediate_value * 2.0
         + expected_future_value * 0.8
-        + plus_placement_bonus
-        + fusion_success_bonus;
+        + fusion_success_bonus
+        + insert_bonus;
 
     Ok((total_value, nodes_evaluated))
 }
