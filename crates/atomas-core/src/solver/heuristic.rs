@@ -44,9 +44,15 @@ pub fn evaluate_state(state: &GameState, weights: &HeuristicWeights) -> f64 {
         score += weights.highest_atom_weight * max_atom as f64;
     }
 
-    // Component 4: Ring size penalty (penalize overcrowding)
-    let ring_size = state.ring_size() as f64;
-    score += weights.ring_size_penalty * ring_size;
+    // Component 4: Ring size penalty (exponentially penalize overcrowding)
+    let ring_size = state.ring_size();
+    let ring_penalty = match ring_size {
+        0..=10 => (ring_size as f64) * -2.0,          // Linear penalty for small rings
+        11..=15 => (ring_size as f64) * -10.0,        // Stronger penalty getting full
+        16..=18 => (ring_size as f64) * -50.0,        // Very strong penalty when nearly full
+        _ => (ring_size as f64) * -200.0,             // Extreme penalty when critically full
+    };
+    score += ring_penalty;
 
     // Component 5: Diversity (variety of unique values)
     let diversity = count_unique_values(state);
@@ -232,27 +238,32 @@ pub fn evaluate_insert_position(state: &GameState, gap_index: usize, atom_value:
     let left = state.ring[left_idx];
     let right = state.ring[right_idx];
 
-    let mut bonus = 0.0;
+    // Ring size penalty - exponential growth to HEAVILY discourage filling ring
+    let ring_size_penalty = match n {
+        0..=10 => 0.0,          // Safe range
+        11..=15 => -50.0,       // Getting full
+        16..=18 => -200.0,      // Very full - urgent!
+        _ => -500.0,            // Critical - ring nearly full!
+    };
 
-    // BEST: Inserting between two atoms of same value creates potential for TWO merges
+    // BEST: Inserting between two matching atoms creates merge chain opportunity
     if left.is_regular() && right.is_regular()
        && left.value == atom_value && right.value == atom_value {
-        // Sandwiched between two matching atoms - creates merge chain opportunity
-        bonus += 100.0 * (atom_value as f64);
-    }
-    // GOOD: Inserting next to one matching atom creates merge opportunity
-    else if left.is_regular() && left.value == atom_value {
-        bonus += 30.0 * (atom_value as f64);
-    }
-    else if right.is_regular() && right.value == atom_value {
-        bonus += 30.0 * (atom_value as f64);
-    }
-    // AVOID: Inserting increases ring size without merge potential
-    else {
-        bonus -= 5.0;
+        // Sandwiched between two matching atoms - HUGE reward
+        let base = 500.0 * (atom_value as f64);
+        return base + ring_size_penalty;
     }
 
-    bonus
+    // GOOD: Inserting next to one matching atom creates merge opportunity
+    if (left.is_regular() && left.value == atom_value)
+       || (right.is_regular() && right.value == atom_value) {
+        let base = 200.0 * (atom_value as f64);
+        return base + ring_size_penalty;
+    }
+
+    // BAD: No merge potential - heavily penalize, especially when ring is full
+    let no_merge_penalty = -100.0 + ring_size_penalty;
+    no_merge_penalty
 }
 
 #[cfg(test)]
