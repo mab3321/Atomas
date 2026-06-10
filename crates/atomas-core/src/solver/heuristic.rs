@@ -44,13 +44,19 @@ pub fn evaluate_state(state: &GameState, weights: &HeuristicWeights) -> f64 {
         score += weights.highest_atom_weight * max_atom as f64;
     }
 
-    // Component 4: Ring size penalty (exponentially penalize overcrowding)
+    // Component 4: Ring size penalty (TRULY EXPONENTIAL - must dominate ALL other factors)
+    // Game typically ends at 18-20 atoms, so penalties must escalate dramatically
     let ring_size = state.ring_size();
     let ring_penalty = match ring_size {
-        0..=10 => (ring_size as f64) * -2.0,          // Linear penalty for small rings
-        11..=15 => (ring_size as f64) * -10.0,        // Stronger penalty getting full
-        16..=18 => (ring_size as f64) * -50.0,        // Very strong penalty when nearly full
-        _ => (ring_size as f64) * -200.0,             // Extreme penalty when critically full
+        0..=10 => (ring_size as f64) * -5.0,          // Small penalty for normal play
+        11 => -200.0,                                  // 2^7 = Start avoiding growth
+        12 => -500.0,                                  // 2^9 = Getting serious
+        13 => -1500.0,                                 // 2^11 = Very concerning
+        14 => -5000.0,                                 // 2^13 = Critical!
+        15 => -15000.0,                                // 2^14 = Extreme!
+        16 => -50000.0,                                // 2^16 = Desperate!
+        17 => -200000.0,                               // 2^18 = Game over imminent!
+        _ => -1000000.0,                               // 2^20 = TERMINAL STATE!
     };
     score += ring_penalty;
 
@@ -186,8 +192,21 @@ pub fn evaluate_plus_placement(state: &GameState, plus_index: usize) -> f64 {
         // C+C (6+6) → N: ~1800 points
         let value_multiplier = (fusion_value as f64).powf(1.5);
 
-        let reward = base_score * value_multiplier * 100.0;
-        eprintln!("[PLUS_EVAL] ✅ FUSION! value={} -> reward={}", fusion_value, reward);
+        let mut reward = base_score * value_multiplier * 100.0;
+
+        // CRITICAL: Plus atoms REDUCE ring size (3 atoms → 1 atom = -2 atoms)
+        // When ring is full, Plus usage becomes EXPONENTIALLY more valuable!
+        let ring_size_bonus = match n {
+            0..=10 => 0.0,              // No bonus needed
+            11..=12 => 5000.0,          // Good to reduce size
+            13..=14 => 20000.0,         // Very valuable
+            15..=16 => 100000.0,        // Extremely valuable!
+            17 => 500000.0,             // CRITICAL - Plus might save the game!
+            _ => 2000000.0,             // DESPERATE - Plus is the ONLY hope!
+        };
+        reward += ring_size_bonus;
+
+        eprintln!("[PLUS_EVAL] ✅ FUSION! value={} ring_size={} -> reward={}", fusion_value, n, reward);
         reward // Massive reward for correct Plus placement
     } else {
         // Placing Plus here does NOTHING useful - MASSIVELY PENALIZE
@@ -225,6 +244,41 @@ fn check_for_fusion_opportunities(state: &GameState) -> bool {
     false
 }
 
+/// Evaluate using a Minus atom to remove a target atom
+/// Returns a score based on strategic value + ring management urgency
+pub fn evaluate_minus_removal(state: &GameState, target_index: usize) -> f64 {
+    if state.ring.is_empty() {
+        return 0.0;
+    }
+
+    let n = state.ring.len();
+    let target = state.ring[target_index];
+
+    // Base value: prefer removing low-value atoms (they clutter the ring)
+    // Removing H(1) is better than removing Be(4)
+    let removal_value = if target.is_regular() {
+        let atom_value = target.value as f64;
+        // Lower values = higher removal reward (inverse relationship)
+        let base = 100.0 / atom_value.max(1.0);  // H:100, He:50, Li:33, Be:25
+        base * 50.0  // Scale up: H=5000, He=2500, Li=1666, Be=1250
+    } else {
+        0.0  // Can't remove special atoms
+    };
+
+    // CRITICAL: Minus atoms REDUCE ring size by 1
+    // When ring is full, Minus usage becomes EXPONENTIALLY more valuable!
+    let ring_urgency_bonus = match n {
+        0..=10 => 0.0,              // No urgency
+        11..=12 => 2000.0,          // Slightly valuable
+        13..=14 => 10000.0,         // Very valuable
+        15..=16 => 50000.0,         // Extremely valuable!
+        17 => 250000.0,             // CRITICAL - Minus can save the game!
+        _ => 1000000.0,             // DESPERATE - Minus is essential!
+    };
+
+    removal_value + ring_urgency_bonus
+}
+
 /// Evaluate an Insert action - prefer positions that create adjacent matching pairs
 pub fn evaluate_insert_position(state: &GameState, gap_index: usize, atom_value: i16) -> f64 {
     if state.ring.is_empty() {
@@ -238,12 +292,18 @@ pub fn evaluate_insert_position(state: &GameState, gap_index: usize, atom_value:
     let left = state.ring[left_idx];
     let right = state.ring[right_idx];
 
-    // Ring size penalty - exponential growth to HEAVILY discourage filling ring
+    // Ring size penalty - TRULY EXPONENTIAL to DOMINATE all other factors
+    // The penalty must be so large that NO strategic placement can override it
     let ring_size_penalty = match n {
-        0..=10 => 0.0,          // Safe range
-        11..=15 => -50.0,       // Getting full
-        16..=18 => -200.0,      // Very full - urgent!
-        _ => -500.0,            // Critical - ring nearly full!
+        0..=10 => 0.0,              // Safe range
+        11 => -100.0,               // Starting to fill
+        12 => -300.0,               // Getting full
+        13 => -800.0,               // Very full
+        14 => -2000.0,              // Critical
+        15 => -5000.0,              // Extreme
+        16 => -15000.0,             // Desperate - avoid at all costs!
+        17 => -50000.0,             // Game over imminent!
+        _ => -200000.0,             // TERMINAL - game over in 1-2 moves!
     };
 
     // BEST: Inserting between two matching atoms creates merge chain opportunity

@@ -1,4 +1,4 @@
-use super::heuristic::{HeuristicWeights, evaluate_state, evaluate_plus_placement, evaluate_insert_position};
+use super::heuristic::{HeuristicWeights, evaluate_state, evaluate_plus_placement, evaluate_insert_position, evaluate_minus_removal};
 use super::movegen::generate_legal_actions;
 use super::spawn::SpawnConfig;
 use crate::{Action, GameState};
@@ -132,6 +132,33 @@ fn expectimax_max_node(
         // Plus quality is the DOMINANT factor (10x weight)
         let total_value = plus_quality * 10.0
                         + immediate_value * 100.0
+                        + expected_future_value * 0.5;
+        return Ok((total_value, nodes_evaluated));
+    }
+
+    // CRITICAL: For Minus atom actions, ring management becomes the PRIMARY FACTOR
+    // When ring is full (16-18 atoms), Minus usage can prevent game over!
+    if let Action::UseMinus { target_index, .. } = action {
+        let minus_quality = evaluate_minus_removal(state, *target_index);
+
+        // Minus evaluation includes ring urgency bonus
+        // At ring size 17-18, this becomes MASSIVE (250k-1M bonus)
+        if depth >= config.max_depth {
+            return Ok((minus_quality + immediate_value * 10.0, nodes_evaluated));
+        }
+
+        let (expected_future_value, spawn_nodes) = expectimax_chance_node(
+            &next_state,
+            spawn_config,
+            heuristic_weights,
+            config,
+            depth + 1,
+        )?;
+        nodes_evaluated += spawn_nodes;
+
+        // Minus quality dominates when ring is full (includes urgency bonus)
+        let total_value = minus_quality * 5.0
+                        + immediate_value * 10.0
                         + expected_future_value * 0.5;
         return Ok((total_value, nodes_evaluated));
     }
