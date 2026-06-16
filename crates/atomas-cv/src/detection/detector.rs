@@ -137,11 +137,26 @@ impl GameStateDetector {
         }
 
         let elapsed = start.elapsed().as_millis() as u64;
+
+        // Calculate real average confidence from color distances
+        let avg_confidence = if !deduped.is_empty() {
+            let sum: f64 = deduped.iter()
+                .map(|sm| {
+                    // Convert distance to confidence: 0.0 dist = 1.0 confidence
+                    // 0.3 dist (max acceptable) = 0.0 confidence
+                    (1.0 - (sm.color_dist / 0.3)).max(0.0)
+                })
+                .sum();
+            sum / deduped.len() as f64
+        } else {
+            0.0
+        };
+
         let stats = DetectionStats {
             total_detections: all_detections.len(),
             ring_detections: ring_elements.len(),
             player_detections: if player_atom.is_some() { 1 } else { 0 },
-            avg_confidence: 1.0,
+            avg_confidence,
             processing_time_ms: elapsed,
         };
 
@@ -173,11 +188,14 @@ impl GameStateDetector {
     }
 
     fn normalize_brightness(color: (u8, u8, u8)) -> (u8, u8, u8) {
-        let max_ch = color.0.max(color.1).max(color.2) as f32;
-        if max_ch < 1.0 {
+        // GENTLER normalization: scale average brightness to 128 instead of max channel to 200
+        // This preserves relative brightness differences between elements better
+        let avg = (color.0 as f32 + color.1 as f32 + color.2 as f32) / 3.0;
+        if avg < 1.0 {
             return (0, 0, 0);
         }
-        let scale = 200.0 / max_ch;
+        let target = 128.0;  // Target average brightness (was max=200, too aggressive)
+        let scale = target / avg;
         (
             (color.0 as f32 * scale).round().min(255.0) as u8,
             (color.1 as f32 * scale).round().min(255.0) as u8,
@@ -355,6 +373,15 @@ impl GameStateDetector {
             // Provisional best + gray tie-break (prefer lowest atomic number
             // among near-tied GRAYS — see note below).
             let (mut best_ei, mut best_d) = ranked[0];
+
+            // CONFIDENCE CHECK: Reject matches with very high color distance
+            const MAX_ACCEPTABLE_DISTANCE: f64 = 0.30;
+            if best_d > MAX_ACCEPTABLE_DISTANCE {
+                println!("  ⚠️  REJECTED: Low confidence (dist={:.3} > {:.2})",
+                        best_d, MAX_ACCEPTABLE_DISTANCE);
+                continue;  // Skip this circle - too uncertain
+            }
+
             let base = ranked[0].1;
             if is_gray(&elements_data.elements[best_ei].rgb) {
                 let tie_eps = 0.12;
